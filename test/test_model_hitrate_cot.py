@@ -22,14 +22,14 @@ from typing import List, Dict, Any, Callable
 
 def extract_all_sids_from_text(text):
     import re
-    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>'
+    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><\|sid_end\|>'
     matches = re.findall(sid_pattern, text)
     return matches
 
 
 def extract_sid_from_text(text):
     import re
-    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>'
+    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><\|sid_end\|>'
     match = re.search(sid_pattern, text)
     if match:
         return match.group(0)
