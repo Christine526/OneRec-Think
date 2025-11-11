@@ -68,7 +68,9 @@ def get_special_tokens():
     special_tokens.append('<|sid_end|>')
 
     max_range = 256
-    for prefix in ['s_a', 's_b', 's_c', 's_d']:
+    # Modified to support 3D SID format (s_a, s_b, s_c) for Kling data
+    # Original: ['s_a', 's_b', 's_c', 's_d'] (4D)
+    for prefix in ['s_a', 's_b', 's_c']:
         for i in range(max_range):
             special_tokens.append(f'<{prefix}_{i}>')
     

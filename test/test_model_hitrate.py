@@ -369,8 +369,9 @@ class TestCollator:
 def extract_sid_from_text(text):
     """Extract SID part from text, return only the SID tokens"""
     import re
-    # Pattern to match SID: <|sid_begin|><s_a_X><s_b_X><s_c_X><s_d_X><|sid_end|>
-    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>'
+    # Modified to support 3D SID format (s_a, s_b, s_c) for Kling data
+    # Original: r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>' (4D)
+    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><\|sid_end\|>'
     match = re.search(sid_pattern, text)
     if match:
         return match.group(0)
@@ -379,8 +380,9 @@ def extract_sid_from_text(text):
 def extract_all_sids_from_text(text):
     """Extract all SID tokens from text, return a list of SID strings"""
     import re
-    # Pattern to match SID: <|sid_begin|><s_a_X><s_b_X><s_c_X><s_d_X><|sid_end|>
-    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>'
+    # Modified to support 3D SID format (s_a, s_b, s_c) for Kling data
+    # Original: r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><s_d_\d+><\|sid_end\|>' (4D)
+    sid_pattern = r'<\|sid_begin\|><s_a_\d+><s_b_\d+><s_c_\d+><\|sid_end\|>'
     matches = re.findall(sid_pattern, text)
     return matches
 

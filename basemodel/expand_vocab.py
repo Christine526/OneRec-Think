@@ -14,7 +14,9 @@ def get_special_tokens(max_range: int = 256) -> list[str]:
     special_tokens.append("<|sid_begin|>")
     special_tokens.append("<|sid_end|>")
 
-    for prefix in ["s_a", "s_b", "s_c", "s_d"]:
+    # Modified to support 3D SID format (s_a, s_b, s_c) for Kling data
+    # Original: ["s_a", "s_b", "s_c", "s_d"] (4D)
+    for prefix in ["s_a", "s_b", "s_c"]:
         for idx in range(max_range):
             special_tokens.append(f"<{prefix}_{idx}>")
 
@@ -70,7 +72,8 @@ def expand_vocabulary(
     model.save_pretrained(save_dir)
     config.save_pretrained(save_dir)
 
-    sample_text = "<|sid_begin|><s_a_0><s_b_0><s_c_0><s_d_0><|sid_end|>"
+    # Modified to 3D SID format for Kling data
+    sample_text = "<|sid_begin|><s_a_0><s_b_0><s_c_0><|sid_end|>"
     sample_ids = tokenizer.encode(sample_text, return_tensors="pt").to(device_for_encoding)
     print(f"Sample tokens encoded shape: {sample_ids.shape}")
 
