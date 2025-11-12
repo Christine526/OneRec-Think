@@ -25,42 +25,15 @@ from collections import defaultdict
 import pandas as pd
 
 
-# 行为类型映射（中文到英文描述）
-BEHAVIOR_MAP = {
-    'LIKE': 'liked',
-    'UNLIKE': 'unliked', 
-    'COMMENT': 'commented on',
-    'SHARE': 'shared',
-    'VIDEO_PLAY_FINISH': 'finished watching',
-    'LONG_PLAY': 'watched',
-    'SHORT_PLAY': 'browsed',
-    'OPERATE': 'clicked',
-    'PRODUCE': 'created',
-    'LARGE': 'enlarged',
-}
-
-
-def load_kling_items(items_file: Path) -> dict:
-    """加载Kling物品元数据"""
-    print(f"加载物品元数据: {items_file}")
-    with items_file.open("r", encoding="utf-8") as f:
-        items = json.load(f)
-    print(f"物品数量: {len(items):,}")
-    return items
-
-
-def load_user_behaviors(behaviors_file: Path) -> dict:
-    """加载用户行为详情"""
-    print(f"加载用户行为详情: {behaviors_file}")
-    with behaviors_file.open("r", encoding="utf-8") as f:
-        behaviors = json.load(f)
-    print(f"用户数量: {len(behaviors):,}")
-    return behaviors
-
-
-def format_behavior_description(behavior: dict, item_info: dict) -> str:
+def get_behavior_description(behavior: dict, item_info: dict) -> str:
     """
-    根据行为类型生成富文本描述
+    根据Kling数据的行为类型生成富文本描述
+    
+    Kling数据结构：
+    - event_type: RECOMMEND/SEARCH/PRODUCE
+    - behavior_type: OPERATE/VIDEO_PLAY_FINISH/LONG_PLAY/SHORT_PLAY (PRODUCE场景下为null)
+    - behavior_subtype: 只有behavior_type='OPERATE'时才有值
+      - LIKE, UNLIKE, COMMENT, SHARE, SAME_STYLE, REPORT, LARGE(点击)
     
     Args:
         behavior: 行为信息字典
@@ -79,42 +52,82 @@ def format_behavior_description(behavior: dict, item_info: dict) -> str:
     title = item_info.get('title', '')
     categories = item_info.get('categories', '')
     
-    # 构建行为动词
-    action = BEHAVIOR_MAP.get(behavior_subtype, BEHAVIOR_MAP.get(behavior_type, 'interacted with'))
+    # 1. 确定行为动词
+    action = 'interacted with'  # 默认
     
-    # 基本描述
+    if event_type == 'PRODUCE':
+        # 生产场景：behavior_type和behavior_subtype都是null
+        action = 'created'
+    elif behavior_type == 'OPERATE':
+        # 操作行为，根据behavior_subtype细分
+        subtype_action_map = {
+            'LIKE': 'liked',
+            'UNLIKE': 'unliked',
+            'COMMENT': 'commented on',
+            'SHARE': 'shared',
+            'SAME_STYLE': 'used same style for',
+            'REPORT': 'reported',
+            'LARGE': 'clicked'  # LARGE才是点击
+        }
+        action = subtype_action_map.get(behavior_subtype, 'interacted with')
+    elif behavior_type == 'VIDEO_PLAY_FINISH':
+        action = 'finished watching'
+    elif behavior_type == 'LONG_PLAY':
+        action = 'watched for a long time'
+    elif behavior_type == 'SHORT_PLAY':
+        action = 'browsed'
+    
+    # 2. 构建基本描述
     desc_parts = [action, 'item', sid]
     
-    # 添加标题和类别
+    # 3. 添加标题和类别
     if title:
         desc_parts.extend([', its title is', f'"{title}"'])
     if categories:
         desc_parts.extend([', its categories are', f'"{categories}"'])
     
-    # 添加事件类型特定信息
+    # 4. 添加上下文信息
     context_parts = []
     
-    # 搜索场景：添加搜索词
+    # 搜索场景：添加搜索词和搜索次数
     if event_type == 'SEARCH' and query_content:
-        if query_cnt > 1:
+        if query_cnt and int(query_cnt) > 1:
             context_parts.append(f'searched for "{query_content}" {query_cnt} times')
         else:
             context_parts.append(f'searched for "{query_content}"')
-    
-    # 生产场景：标注为自创内容
-    elif event_type == 'PRODUCE':
-        context_parts.append('created this content')
     
     # 推荐场景
     elif event_type == 'RECOMMEND':
         context_parts.append('from recommendations')
     
-    # 组合描述
+    # 生产场景
+    elif event_type == 'PRODUCE':
+        context_parts.append('created by user')
+    
+    # 5. 组合完整描述
     full_desc = ' '.join(desc_parts)
     if context_parts:
         full_desc += ' (' + ', '.join(context_parts) + ')'
     
     return full_desc
+
+
+def load_kling_items(items_file: Path) -> dict:
+    """加载Kling物品元数据"""
+    print(f"加载物品元数据: {items_file}")
+    with items_file.open("r", encoding="utf-8") as f:
+        items = json.load(f)
+    print(f"物品数量: {len(items):,}")
+    return items
+
+
+def load_user_behaviors(behaviors_file: Path) -> dict:
+    """加载用户行为详情"""
+    print(f"加载用户行为详情: {behaviors_file}")
+    with behaviors_file.open("r", encoding="utf-8") as f:
+        behaviors = json.load(f)
+    print(f"用户数量: {len(behaviors):,}")
+    return behaviors
 
 
 def build_rich_description(
@@ -161,7 +174,7 @@ def build_rich_description(
         
         if behavior:
             # 有行为详情，生成富文本描述
-            desc = format_behavior_description(behavior, item_info)
+            desc = get_behavior_description(behavior, item_info)
         else:
             # 没有行为详情，使用基本格式
             title = item_info.get('title', '')
@@ -268,6 +281,7 @@ def generate_kling_ra_data(
         'total_users': 0,
         'event_types': defaultdict(int),
         'behavior_types': defaultdict(int),
+        'behavior_subtypes': defaultdict(int),
         'with_search_query': 0,
         'produce_events': 0,
     }
@@ -277,9 +291,12 @@ def generate_kling_ra_data(
     for user_id, behaviors in user_behaviors.items():
         for behavior in behaviors:
             event_type = behavior.get('event_type', 'UNKNOWN')
-            behavior_type = behavior.get('behavior_type', 'UNKNOWN')
+            behavior_type = behavior.get('behavior_type', '') or 'NULL'
+            behavior_subtype = behavior.get('behavior_subtype', '') or 'NULL'
+            
             stats['event_types'][event_type] += 1
             stats['behavior_types'][behavior_type] += 1
+            stats['behavior_subtypes'][behavior_subtype] += 1
             
             if event_type == 'SEARCH' and behavior.get('element_query_content'):
                 stats['with_search_query'] += 1
@@ -292,14 +309,23 @@ def generate_kling_ra_data(
         if count > 0:
             print(f"  {event_type:12s}: {count:8,d} 次")
     
-    print("\n📊 行为类型分布 (Top 10):")
+    print("\n📊 行为类型分布:")
     sorted_behaviors = sorted(
         stats['behavior_types'].items(), 
         key=lambda x: x[1], 
         reverse=True
-    )[:10]
+    )
     for behavior_type, count in sorted_behaviors:
         print(f"  {behavior_type:20s}: {count:8,d} 次")
+    
+    print("\n📝 操作子类型分布 (behavior_subtype):")
+    sorted_subtypes = sorted(
+        stats['behavior_subtypes'].items(), 
+        key=lambda x: x[1], 
+        reverse=True
+    )
+    for subtype, count in sorted_subtypes:
+        print(f"  {subtype:20s}: {count:8,d} 次")
     
     print(f"\n🔍 搜索场景统计:")
     search_total = stats['event_types'].get('SEARCH', 0)

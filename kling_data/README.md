@@ -133,8 +133,8 @@ user_id item_id1 item_id2 item_id3 ...
     {
       "item_id": "xxx",
       "event_type": "RECOMMEND/SEARCH/PRODUCE",
-      "behavior_type": "OPERATE",
-      "behavior_subtype": "LIKE",
+      "behavior_type": "OPERATE/VIDEO_PLAY_FINISH/LONG_PLAY/SHORT_PLAY",
+      "behavior_subtype": "LIKE/COMMENT/SHARE/LARGE...",
       "timestamp": "...",
       "element_query_content": "搜索词",
       "query_cnt": 5
@@ -142,6 +142,58 @@ user_id item_id1 item_id2 item_id3 ...
   ]
 }
 ```
+
+## 📚 Kling数据行为类型结构
+
+### event_type（事件类型）
+
+- **RECOMMEND**: 推荐场景
+- **SEARCH**: 搜索场景
+- **PRODUCE**: 生产/创作场景
+
+### behavior_type（行为类型）
+
+仅在RECOMMEND和SEARCH场景下有值，PRODUCE场景下为null：
+
+- **OPERATE**: 操作行为（需看behavior_subtype细分）
+- **VIDEO_PLAY_FINISH**: 完播
+- **LONG_PLAY**: 长播放
+- **SHORT_PLAY**: 短播放
+
+### behavior_subtype（行为子类型）
+
+仅当behavior_type='OPERATE'时才有值：
+
+- **LIKE**: 点赞
+- **UNLIKE**: 取消点赞
+- **COMMENT**: 评论
+- **SHARE**: 转发/分享
+- **SAME_STYLE**: 一键同款
+- **REPORT**: 举报
+- **LARGE**: 放大/点击 ✅ **这才是点击行为**
+
+### 行为类型映射表
+
+在生成富文本描述时，使用以下映射：
+
+| 行为组合 | 英文描述 | 中文含义 |
+|---------|---------|---------|
+| PRODUCE (event_type) | created | 创作 |
+| OPERATE + LIKE | liked | 点赞 |
+| OPERATE + UNLIKE | unliked | 取消点赞 |
+| OPERATE + COMMENT | commented on | 评论 |
+| OPERATE + SHARE | shared | 分享 |
+| OPERATE + SAME_STYLE | used same style for | 一键同款 |
+| OPERATE + REPORT | reported | 举报 |
+| OPERATE + LARGE | clicked | 点击 ✅ |
+| VIDEO_PLAY_FINISH | finished watching | 完播 |
+| LONG_PLAY | watched for a long time | 长播放 |
+| SHORT_PLAY | browsed | 浏览 |
+
+**重要**：
+- ✅ `OPERATE + LARGE` 才是点击行为
+- ❌ 不要把 `OPERATE` 本身当作点击
+- ℹ️ PRODUCE场景下，behavior_type和behavior_subtype都是null
 
 ## 📚 训练数据格式说明
 
@@ -167,7 +219,7 @@ user_id item_id1 item_id2 item_id3 ...
 ```json
 {
   "user_id": "xxx",
-  "description": "The user has liked item <|sid_begin|><s_a_1><s_b_2><s_c_3><|sid_end|>, its title is 'xxx', its categories are 'Video Creation' (from recommendations); searched for 'AI video' 3 times and clicked item <|sid_begin|><s_a_4><s_b_5><s_c_6><|sid_end|>, its title is 'yyy', its categories are 'Image Creation' (searched for 'AI video' 3 times);",
+  "description": "The user has liked item <|sid_begin|><s_a_1><s_b_2><s_c_3><|sid_end|>, its title is 'xxx', its categories are 'Video Creation' (from recommendations); clicked item <|sid_begin|><s_a_4><s_b_5><s_c_6><|sid_end|>, its title is 'yyy', its categories are 'Image Creation' (searched for 'AI video' 3 times);",
   "groundtruth": "<|sid_begin|><s_a_X><s_b_Y><s_c_Z><|sid_end|>",
   "title": "预测物品的标题",
   "categories": "预测物品的类别"
@@ -175,9 +227,9 @@ user_id item_id1 item_id2 item_id3 ...
 ```
 
 **特点**:
-- 包含丰富的行为类型信息 (liked, commented on, watched, etc.)
+- 包含丰富的行为类型信息 (liked, commented on, watched, clicked, etc.)
 - 搜索场景包含 `element_query_content` 和 `query_cnt`
-- 生产行为(PRODUCE)特别标注为 "created"
+- 生产行为(PRODUCE)标注为 "created"
 - 推荐场景标注为 "from recommendations"
 
 ---
@@ -247,25 +299,15 @@ user_id item_id1 item_id2 item_id3 ...
 
 1. **搜索场景的富文本生成**:
    - 利用 `element_query_content` 生成搜索行为描述
-   - 例如: "The user searched for 'AI video generation' 5 times"
+   - 例如: "searched for 'AI video generation' 5 times"
 
 2. **生产行为(PRODUCE)的标注**:
-   - 例如: "The user created content with prompt 'xxx'"
+   - 例如: "created item ..."
+   - PRODUCE场景下behavior_type和behavior_subtype都是null
 
-3. **行为类型映射**:
-   ```python
-   behavior_map = {
-       'LIKE': 'liked',
-       'UNLIKE': 'unliked',
-       'COMMENT': 'commented on',
-       'SHARE': 'shared',
-       'VIDEO_PLAY_FINISH': 'finished watching',
-       'LONG_PLAY': 'watched',
-       'SHORT_PLAY': 'watched',
-       'OPERATE': 'clicked',
-       'PRODUCE': 'created'
-   }
-   ```
+3. **点击行为的正确识别**:
+   - ✅ 只有 `behavior_type='OPERATE' AND behavior_subtype='LARGE'` 才是点击
+   - 需要额外检查platform_type和element_action（详见load_kling_data.py第92-102行）
 
 4. **类别层级**:
    - Kling的categories已经是层级结构
@@ -291,19 +333,41 @@ user_id item_id1 item_id2 item_id3 ...
    - 默认要求用户至少有3次交互
    - 否则无法进行train/val/test分割
 
+5. **行为类型null值处理**:
+   - PRODUCE场景下behavior_type和behavior_subtype为null是正常的
+   - 不要当作缺失数据过滤掉
+
 ## 📊 数据统计示例
 
 运行完成后会输出类似统计信息：
 
 ```
-📈 行为类型分布:
-  RECOMMEND   : 50,000 条 (50.0%)
-  SEARCH      : 30,000 条 (30.0%)
-  PRODUCE     : 20,000 条 (20.0%)
+📈 事件类型分布:
+  RECOMMEND   : 50,000 次 (50.0%)
+  SEARCH      : 30,000 次 (30.0%)
+  PRODUCE     : 20,000 次 (20.0%)
+
+📊 行为类型分布:
+  OPERATE             : 40,000 次
+  VIDEO_PLAY_FINISH   : 20,000 次
+  LONG_PLAY           : 15,000 次
+  SHORT_PLAY          : 20,000 次
+  NULL                : 20,000 次 (PRODUCE场景)
+
+📝 操作子类型分布:
+  LIKE          : 15,000 次
+  LARGE         :  8,000 次 ✅ 点击
+  COMMENT       :  7,000 次
+  SHARE         :  5,000 次
+  UNLIKE        :  3,000 次
+  SAME_STYLE    :  1,500 次
+  REPORT        :    500 次
+  NULL          : 60,000 次 (非OPERATE场景)
 
 🔍 搜索场景统计:
-  SEARCH类型总数: 30,000 条
-  包含查询词: 25,000 条 (83.3%)
+  总搜索事件: 30,000 次
+  包含查询词: 25,000 次 (83.3%)
+  生产事件: 20,000 次
 
 📊 序列长度分布:
   1-2   :    500 用户 ( 5.0%)
